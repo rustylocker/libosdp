@@ -482,6 +482,7 @@ struct osdp_status_report {
 #define OSDP_CMD_TEXT_MAX_LEN          32
 #define OSDP_CMD_KEYSET_KEY_MAX_LEN    32
 #define OSDP_CMD_MFG_MAX_DATALEN       64
+#define OSDP_CMD_XWR_APDU_MAX_LEN      255
 
 /**
  * @brief Command sent from CP to Control digital output of PD.
@@ -732,6 +733,205 @@ struct osdp_cmd_file_tx {
 	uint32_t flags;
 };
 
+
+/**
+ * Extended READ/WRITE Command Mode-00 - Mode Set
+ *
+ * Set and configure the background behaviour mode.
+ */
+struct osdp_xwr_mode_set {
+	/**
+	 * Extended READ/WRITE background operation mode code
+	 */
+	uint8_t mode_code;
+	/**
+	 * Mode configuration (optional in request command)
+	 *
+	 * - 0x00 - Disable (used if absent)
+	 * - 0x01 - Enable the Mode 0 Extended Read Card Info Report Response
+	 */
+	uint8_t mode_config;
+};
+
+/**
+ * Extended READ/WRITE Command Mode-01 - Transparent Content Send Request Data
+ *
+ * The embedded APDU shall be passed to the specified reader.
+ */
+struct osdp_xwr_transp_send {
+	/**
+	 * Reader number. 0 = First Reader, 1 = Second Reader, etc.
+	 */
+	uint8_t reader;
+	/**
+	 * Results of requested command (filled by application)
+	 */
+	uint8_t status;
+	/**
+	 * Length of the APDU data (internal use)
+	 */
+	uint8_t apdu_length;
+	/**
+	 * Valid APDU to send to the smart card
+	 */
+	uint8_t apdu[OSDP_CMD_XWR_APDU_MAX_LEN];
+};
+
+/**
+ * Extended READ/WRITE Command Mode-01 - Connection Done
+ *
+ * Instruct the PD (reader) to disconnect from the smart card.
+ */
+struct osdp_xwr_sc_disconnect {
+	/**
+	 * Reader number. 0 = First Reader, 1 = Second Reader, etc.
+	 */
+	uint8_t reader;
+};
+
+/**
+ * Extended READ/WRITE Command Mode-01 - Request Secure PIN Entry
+ *
+ * Instruct the PD (reader) to perform a local Secure PIN Entry (SPE) sequence
+ * with the smart card. It also includes an APDU for the smart card.
+ * When the reader receives this packet, it autonomously prompts the user for
+ * their PIN, inserts the PIN into the APDU and sends it to the smart card.
+ * The reader should restore the display to its previous state when done
+ * processing the user input.
+ * While processing this message, the reader should not add any keys to the
+ * keypad buffer.
+ */
+struct osdp_xwr_secure_pin {
+	/**
+	 * Reader number. 0 = First Reader, 1 = Second Reader, etc.
+	 */
+	uint8_t reader;
+	/**
+	 * Timeout in seconds (0x00 means use default timeout)
+	 */
+	uint8_t timeout;
+	/**
+	 * Timeout in seconds after first key stroke
+	 */
+	uint8_t timeout2;
+	/**
+	 * Formatting USB_CCID_PIN_FORMAT_xxx
+	 */
+	uint8_t format_string;
+	/**
+	 * PIN block string
+	 *
+	 * Bits 3-0 - PIN block size in bytes after justification and formatting.
+	 * Bits 7-4 - Bit size of PIN length in APDU.
+	 */
+	uint8_t pin_block_string;
+	/**
+	 * Bit length format
+	 *
+	 * Bits 3-0 - PIN length position in system units
+	 * Bits 7-5 - Reserved for future use, bit 4 set if system units are bytes
+	 *            clear if system units are bits.
+	 */
+	uint8_t pin_len_format;
+	/**
+	 * PIN maximum extra digit
+	 *
+	 * XXYY, where XX is minimum PIN size in digits, YY is maximum.
+	 */
+	uint16_t pin_max_extra_digit;
+	/**
+	 * Conditions under which PIN entry should be considered complete
+	 */
+	uint8_t entry_validation_condition;
+	/**
+	 * Number of verification messages to display for PIN
+	 */
+	uint8_t number_message;
+	/**
+	 * Language for messages
+	 */
+	uint16_t language_id;
+	/**
+	 * Message index
+	 */
+	uint8_t msg_index;
+	/**
+	 * T=1 I-block prologue field to use (fill with 0x00)
+	 */
+	uint32_t teo_prologue;
+	/**
+	 * Length of APDU to be sent to the smart card
+	 */
+	uint32_t apdu_length;
+	/**
+	 * APDU data to send to the smart card
+	 */
+	uint8_t apdu[OSDP_CMD_XWR_APDU_MAX_LEN];
+};
+
+/**
+ * @brief Extended READ/WRITE Mode-01 - Smartcard Scan
+ *
+ * Identify if a smart card is present at the reader.
+ */
+struct osdp_xwr_sc_scan {
+	/**
+	 * Reader number. 0 = First Reader, 1 = Second Reader, etc.
+	 */
+	uint8_t reader;
+	/**
+	 * Smart Card Present Status (filled by application on ACK response)
+	 *
+	 * - 0x00 - Card not present.
+	 * - 0x01 - Card present but interface not specified.
+	 * - 0x02 - Card present on contactless interface.
+	 * - 0x03 - Card present on contact interface.
+	 * - 0x04 - Reserved for future use.
+	 */
+	uint8_t status;
+};
+
+/**
+ * @brief Extended READ/WRITE Command
+ *
+ * This command implements extended write mode to facilitate communications
+ * with an ISO 7816-4 based credential.
+ */
+struct osdp_cmd_xwrite {
+	/**
+	 * Extended READ/WRITE mode:
+	 * - 0x00 - No specific behavior mode in effect.
+	 *          osdp_XWR commands support the read back and the setting of the
+	 *          PD’s behaviour mode.
+	 * - 0x01 - Transparent smart card interface support.
+	 *          This behaviour mode supports transparent operations between the
+	 *          ACU and a smart card.
+	 */
+	uint8_t mode;
+	/**
+	 * Mode dependent command code
+	 *
+	 * Mode 0:
+	 * - 0x02 - En-/Disable the specified mode
+	 *
+	 * Mode 1:
+	 * - 0x01 - Pass the APDU embedded in this command to the specified reader
+	 * - 0x02 - Notifies the designated reader to terminate its connection to
+	 *          the smart card
+	 * - 0x03 - Instructs the designated reader to perform “Secure PIN Entry”
+	 * - 0x04 - Instructs the designated reader to perform a smart card Scan
+	 */
+	uint8_t command;
+
+	union {
+		struct osdp_xwr_mode_set mode_set;			/**< Mode 0 - Cmd 2 */
+		struct osdp_xwr_transp_send transp_send;	/**< Mode 1 - Cmd 1 */
+		struct osdp_xwr_sc_disconnect sc_disco;		/**< Mode 1 - Cmd 2 */
+		struct osdp_xwr_secure_pin secure_pin;		/**< Mode 1 - Cmd 3 */
+		struct osdp_xwr_sc_scan sc_scan;			/**< Mode 1 - Cmd 4 */
+	};
+};
+
 /**
  * @brief OSDP application exposed commands
  */
@@ -746,6 +946,7 @@ enum osdp_cmd_e {
 	OSDP_CMD_FILE_TX,     /**< File transfer command */
 	OSDP_CMD_STATUS,      /**< Status report command */
 	OSDP_CMD_COMSET_DONE, /**< Comset completed; Alias for OSDP_CMD_COMSET */
+	OSDP_CMD_XWRITE,      /**< Extended write command */
 	OSDP_CMD_SENTINEL     /**< Max command value */
 };
 
@@ -788,6 +989,7 @@ struct osdp_cmd {
 		struct osdp_cmd_keyset keyset;    /**< Keyset command structure */
 		struct osdp_cmd_mfg mfg;          /**< Manufacturer specific command structure */
 		struct osdp_cmd_file_tx file_tx;  /**< File transfer command structure */
+		struct osdp_cmd_xwrite xwrite;    /**< Extended write command structure */
 		struct osdp_status_report status; /**< Status report command structure */
 	};
 };
@@ -799,6 +1001,10 @@ struct osdp_cmd {
 #define OSDP_EVENT_CARDREAD_MAX_DATALEN   64
 #define OSDP_EVENT_KEYPRESS_MAX_DATALEN   64
 #define OSDP_EVENT_MFGREP_MAX_DATALEN     128
+#define OSDP_EVENT_EXTREAD_MAX_DATALEN    128
+#define OSDP_EVENT_XRD_CSN_MAX_DATALEN    32
+#define OSDP_EVENT_XRD_PROTOCOL_MAX_LEN   128
+#define OSDP_EVENT_XRD_APDU_MAX_DATALEN   OSDP_CMD_XWR_APDU_MAX_LEN
 
 /**
  * @brief Various card formats that a PD can support. This is sent to CP
@@ -926,6 +1132,165 @@ struct osdp_event_notification {
 	int arg1;                                /**< Additional data member */
 };
 
+
+/**
+ * Extended READ/WRITE Reply - Error
+ *
+ * This may be sent as a poll response, or in response to any Mode -00 command
+ * (osdp_XWR|XRD_MODE=0|XWR_PCMND=any) to return an error or negative
+ * acknowledge (NAK) condition.
+ */
+struct osdp_xrd_error_reply {
+	/**
+	 * Various transparent mode error conditions.
+	 */
+	uint8_t error_code;
+};
+
+/**
+ * Extended READ/WRITE Reply - Mode setting report
+ *
+ * This reply is sent in response to osdp_XWR|XRD_MODE=0|XWR_PCMND=2
+ * and it returns its current background behaviour mode setting and
+ * configuration in response to the request.
+ */
+typedef struct osdp_xwr_mode_set osdp_xrd_mode_report;
+
+/**
+ * Extended READ/WRITE Reply - Card information report
+ *
+ * When enabled, this reply is sent in response to an osdp_POLL command after
+ * a smart card is detected that may require additional processing in an
+ * alternate mode.
+ */
+struct osdp_xrd_card_report {
+	/**
+	 * Reader Number
+	 */
+	uint8_t reader;
+	/**
+	 * Card Protocol
+	 *
+	 * - 0x00 - Contact T0/T1
+	 * - 0x01 - ISO 14443 A/B
+	 * - 0x02 - Reserved for future use
+	 */
+	uint8_t protocol;
+	/**
+	 * Byte size of the Card Serial Number (0 = no Data)
+	 */
+	uint8_t csn_length;
+	/**
+	 * Card Serial Number
+	 */
+	uint8_t csn[OSDP_EVENT_XRD_CSN_MAX_DATALEN];
+	/**
+	 * Protocol Data
+	 *
+	 * - Protocol 0: ATR
+	 * - Protocol 1: ATS/ATQB
+	 */
+	uint8_t data[OSDP_EVENT_XRD_PROTOCOL_MAX_LEN];
+	/**
+	 * Length of the protocol data (internal use)
+	 */
+	uint8_t length;
+};
+
+/**
+ * Extended READ/WRITE Reply - Card Present Notification
+ *
+ * This reply is sent in response to n osdp_PR01SCSCAN indicating the resulting
+ * smart card connection status or sent in response to an osdp_POLL
+ */
+typedef struct osdp_xwr_sc_scan osdp_xrd_card_present;
+
+/**
+ * Extended READ/WRITE Reply - Transparent Card Data
+ *
+ * This reply is sent in response to a XWR_PCMND Code 0x01 “XMIT” reporting a
+ * data packet received from a smart card by a reader set to operate in
+ * background Mode = 1.
+ */
+struct osdp_xrd_card_data {
+	/**
+	 * Reader Number
+	 */
+	uint8_t reader;
+	/**
+	 * Results of requested command
+	 */
+	uint8_t status;
+	/**
+	 * Length of the APDU data (internal use)
+	 */
+	uint8_t apdu_length;
+	/**
+	 * APDU data from the smart card
+	 */
+	uint8_t apdu[OSDP_EVENT_XRD_APDU_MAX_DATALEN];
+};
+
+/**
+ * Extended READ/WRITE Reply - Secure PIN Entry Complete
+ *
+ * This reply is sent in response to an XWR_PCMND Code 0x03 “Secure PIN Entry”
+ * indicating that a Secure Pin Entry (SPE) sequence has completed.
+ * This reply is used by smart card readers set to operate in background
+ * Mode = 1.
+ */
+struct osdp_xrd_pin_complete {
+	/**
+	 * Reader Number
+	 */
+	uint8_t reader;
+	/**
+	 * Results of the SPE sequence
+	 */
+	uint8_t status;
+	/**
+	 * Number of attempts before card "locks" itself
+	 */
+	uint8_t tries;
+};
+
+/**
+ * @brief OSDP Extended READ/WRITE Reply
+ */
+struct osdp_event_xread {
+	/**
+	 * Extended READ/WRITE mode:
+	 * - 0x00 - No specific behavior mode in effect.
+	 * - 0x01 - Transparent smart card interface support.
+	 */
+	uint8_t mode;
+	/**
+	 * Extended write mode dependent reply code.
+	 *
+	 * Mode 0:
+	 * - 0x00 - General error indication: PD was unable to process the command.
+	 * - 0x01 - Returns the current extended write mode in effect.
+	 * - 0x02 - Returns a card information report when a smart card is detected.
+	 *
+	 * Mode 1:
+	 * - 0x00 - General error indication: PD was unable to process the command.
+	 * - 0x01 - Card present notification.
+	 * - 0x02 - Transparent card data.
+	 * - 0x03 - Secure PIN entry complete.
+	 * - 0x04 - Reserved for future use.
+	 */
+	uint8_t reply;
+
+	union {
+		struct osdp_xrd_error_reply error_reply;	/**< Mode * - Reply 0x00 */
+		osdp_xrd_mode_report mode_report;			/**< Mode 0 - Reply 0x01 */
+		struct osdp_xrd_card_report card_report;	/**< Mode 0 - Reply 0x02 */
+		osdp_xrd_card_present card_present;			/**< Mode 1 - Reply 0x01 */
+		struct osdp_xrd_card_data card_data;		/**< Mode 1 - Reply 0x02 */
+		struct osdp_xrd_pin_complete pin_complete;	/**< Mode 1 - Reply 0x03 */
+	};
+};
+
 /**
  * @brief OSDP PD Events
  */
@@ -935,6 +1300,7 @@ enum osdp_event_type {
 	OSDP_EVENT_MFGREP,        /**< Manufacturer specific reply event */
 	OSDP_EVENT_STATUS,        /**< Status event */
 	OSDP_EVENT_NOTIFICATION,  /**< LibOSDP notification event */
+	OSDP_EVENT_XREAD,         /**< Extended read event */
 	OSDP_EVENT_SENTINEL       /**< Max event value */
 };
 
@@ -952,6 +1318,7 @@ struct osdp_event {
 		struct osdp_event_mfgrep mfgrep;     /**< Manufacturer specific response event struture */
 		struct osdp_status_report status;    /**< Status report event structure */
 		struct osdp_event_notification notif;/**< Notification event structure */
+		struct osdp_event_xread xread;   /**< Extended read event structure */
 	};
 };
 

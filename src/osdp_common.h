@@ -271,6 +271,29 @@ enum osdp_cp_state_e {
 	OSDP_CP_STATE_SENTINEL
 };
 
+enum osdp_pd_xwr_mode_e {
+	/**
+	 * Set/read background behaviour mode.
+	 */
+	OSDP_PD_BG_MODE_CFG = 0x0,
+	/**
+	 * Transparent smart card interface support.
+	 */
+	OSDP_PD_PROFILE_TSCIS = 0x1,
+};
+
+enum osdp_pd_xwr_cmd_e {
+	/**
+	 * Request the PD to return the current XWR background behavior profile
+	 * in effect.
+	 */
+	OSDP_PD_XWR_CMD_PROFILE_REQ = 0x01,
+	/**
+	 * Set the PD to the specified XWR background behavior profile.
+	 */
+	OSDP_PD_XWR_CMD_PROFILE_SET = 0x02,
+};
+
 enum osdp_pkt_errors_e {
 	OSDP_ERR_PKT_NONE = 0,
 	/**
@@ -369,7 +392,7 @@ struct osdp_pd {
 	/* PD Capability; Those received from app + implicit capabilities */
 	struct osdp_pd_cap cap[OSDP_PD_CAP_SENTINEL];
 
-	int state;             /* FSM state (CP mode only) */
+	int state;             /* FSM state (CP mode) or XWR_PROFILE (PD mode) */
 	int phy_state;         /* phy layer FSM state (CP mode only) */
 	int phy_retry_count;   /* command retry counter */
 	uint32_t wait_ms;      /* wait time in MS to retry communication */

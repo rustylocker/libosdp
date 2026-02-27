@@ -7,6 +7,7 @@
 #include "osdp_common.h"
 #include "osdp_file.h"
 #include "osdp_diag.h"
+#include "osdp_xwr.h"
 
 #ifndef OPT_OSDP_STATIC_PD
 #include <stdlib.h>
@@ -45,6 +46,7 @@
 #define REPLY_KEYPAD_LEN               2
 #define REPLY_RAW_LEN                  4
 #define REPLY_MFGREP_LEN               4 /* variable length command */
+#define REPLY_EXTREAD_LEN              2 /* variable length command */
 
 enum osdp_pd_error_e {
 	OSDP_PD_ERR_NONE = 0,
@@ -201,6 +203,9 @@ static int pd_translate_event(struct osdp_pd *pd, const struct osdp_event *event
 	case OSDP_EVENT_MFGREP:
 		reply_code = REPLY_MFGREP;
 		break;
+	case OSDP_EVENT_XREAD:
+		reply_code = REPLY_XRD;
+		break;
 	default:
 		LOG_ERR("Unknown event type %d", event->type);
 		BUG();
@@ -304,6 +309,12 @@ static int pd_cmd_cap_ok(struct osdp_pd *pd, struct osdp_cmd *cmd)
 	case CMD_TEXT:
 		cap = &pd->cap[OSDP_PD_CAP_READER_TEXT_OUTPUT];
 		if (cap->num_items == 0 || cap->compliance_level == 0) {
+			break;
+		}
+		return 1;
+	case CMD_XWR:
+		cap = &pd->cap[OSDP_PD_CAP_SMART_CARD_SUPPORT];
+		if (!cmd || cap->compliance_level == 0) {
 			break;
 		}
 		return 1;
@@ -598,6 +609,7 @@ static int pd_decode_command(struct osdp_pd *pd, uint8_t *buf, int len)
 		break;
 	case CMD_MFG:
 		if (len < CMD_MFG_DATA_LEN) {
+			LOG_ERR("cmd length error");
 			break;
 		}
 		cmd.id = OSDP_CMD_MFG;
@@ -662,6 +674,7 @@ static int pd_decode_command(struct osdp_pd *pd, uint8_t *buf, int len)
 		break;
 	case CMD_KEYSET:
 		if (len != CMD_KEYSET_DATA_LEN) {
+			LOG_ERR("cmd length error");
 			break;
 		}
 		/* only key_type == 1 (SCBK) and key_len == 16 is supported */
@@ -697,6 +710,33 @@ static int pd_decode_command(struct osdp_pd *pd, uint8_t *buf, int len)
 		pd->reply_id = REPLY_ACK;
 		memcpy(pd->ephemeral_data, cmd.keyset.data, 16);
 		break;
+	case CMD_XWR: {
+		bool trigger_app = false;
+		cmd.id = OSDP_CMD_XWRITE;
+		if (!pd_cmd_cap_ok(pd, &cmd)) {
+			break;
+		}
+		ret = osdp_xwr_cmd_decode(pd, &cmd, buf + pos, len, &trigger_app);
+		if (ret != 0) {
+			ret = OSDP_PD_ERR_GENERIC;
+		}
+		else if (trigger_app) {
+			ret = 0;
+			pd->reply_id = REPLY_ACK;  // default reply
+			if (pd->command_callback) {
+				ret = pd->command_callback(pd->command_callback_arg, &cmd);
+			}
+			ret = pd_stage_event_xwr_reply(pd, &cmd, ret);
+			if (ret < 0) {
+				pd->reply_id = REPLY_NAK;
+				pd->ephemeral_data[0] = OSDP_PD_NAK_RECORD;
+				ret = OSDP_PD_ERR_REPLY;
+			}
+			else {
+				ret = OSDP_PD_ERR_NONE;
+			}
+		}
+	}	break;
 	case CMD_CHLNG:
 		if (len != CMD_CHLNG_DATA_LEN) {
 			break;
@@ -918,6 +958,14 @@ static int pd_build_reply(struct osdp_pd *pd, uint8_t *buf, int max_len)
 		len += event->mfgrep.length;
 		ret = OSDP_PD_ERR_NONE;
 		break;
+	case REPLY_XRD:
+		ret = osdp_xrd_reply_build(pd, buf + len, max_len);
+		if (ret < 0) {
+			break;
+		}
+		len += ret;
+		ret = OSDP_PD_ERR_NONE;
+		break;
 	case REPLY_FTSTAT:
 		buf[len++] = pd->reply_id;
 		ret = osdp_file_cmd_stat_build(pd, buf + len, max_len);
@@ -974,7 +1022,7 @@ static int pd_build_reply(struct osdp_pd *pd, uint8_t *buf, int max_len)
 		smb[1] = (len > 1) ? SCS_18 : SCS_16;
 	}
 
-	if (ret != 0) {
+	if (ret != OSDP_PD_ERR_NONE) {
 		/* catch all errors and report it as a RECORD error to CP */
 		LOG_ERR("Failed to build REPLY: %s(%02x); Sending NAK instead!",
 			osdp_reply_name(pd->reply_id), pd->reply_id);
@@ -1234,6 +1282,7 @@ osdp_t *osdp_pd_setup(const osdp_pd_info_t *info)
 	pd->address = info->address;
 	pd->flags = 0;
 	pd->seq_number = -1;
+	pd->state = 0;
 
 	memcpy(&pd->channel, &info->channel, sizeof(struct osdp_channel));
 
