@@ -339,6 +339,56 @@ static bool test_mfgrep_event()
 	return true;
 }
 
+static bool test_xrd_event()
+{
+	printf(SUB_2 "testing extened read event\n");
+	reset_test_state();
+
+	uint8_t csn[] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
+	uint8_t data[] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
+	struct osdp_event event = {
+		.type = OSDP_EVENT_XREAD,
+		.xread = {
+			.mode = 0,
+			.reply = 0x02,
+			.card_report = {
+				.reader = 0,
+				.protocol = 0x1,
+				.csn_length = sizeof(csn),
+				.length = sizeof(data)
+			}
+		},
+	};
+	memcpy(event.xread.card_report.csn, csn, sizeof(csn));
+	memcpy(event.xread.card_report.data, data, sizeof(data));
+
+	if (osdp_pd_submit_event(g_test_ctx.pd_ctx, &event)) {
+		printf(SUB_2 "Failed to submit xrd event\n");
+		return false;
+	}
+
+	if (!wait_for_event(OSDP_EVENT_XREAD, 5)) {
+		printf(SUB_2 "XRD event not received\n");
+		return false;
+	}
+
+	/* Verify event data */
+	if (g_test_ctx.last_event_data) {
+		struct osdp_event *ev = (struct osdp_event *)g_test_ctx.last_event_data;
+		if ( (ev->xread.mode != event.xread.mode)
+		  || (ev->xread.reply != event.xread.reply)
+		  || (ev->xread.card_report.reader != event.xread.card_report.reader)
+		  || (ev->xread.card_report.protocol != event.xread.card_report.protocol)
+		  || memcmp(ev->xread.card_report.csn, event.xread.card_report.csn, 8)
+		  || memcmp(ev->xread.card_report.data, event.xread.card_report.data, 8) ) {
+			printf(SUB_2 "XRD event data mismatch\n");
+			return false;
+		}
+	}
+
+	return true;
+}
+
 void run_event_tests(struct test *t)
 {
 	bool overall_result = true;
@@ -360,6 +410,7 @@ void run_event_tests(struct test *t)
 	overall_result &= test_input_status_event();
 	overall_result &= test_output_status_event();
 	overall_result &= test_mfgrep_event();
+	overall_result &= test_xrd_event();
 
 	/* Teardown test environment */
 	teardown_test_environment();

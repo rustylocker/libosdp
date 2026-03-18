@@ -473,6 +473,75 @@ static bool test_status_command()
 	return wait_for_command(OSDP_CMD_STATUS, 5);
 }
 
+static bool test_xwr_command_set_mode()
+{
+	printf(SUB_2 "testing extended write command 1 (set mode)\n");
+	reset_test_state();
+
+	struct osdp_cmd cmd = {
+		.id = OSDP_CMD_XWRITE,
+		.xwrite = {
+			.mode = 0,
+			.command = 0x02,
+			.mode_set = {
+				.mode_code = 1,
+				.mode_config = 0
+			}
+		},
+	};
+
+	if (osdp_cp_submit_command(g_test_ctx.cp_ctx, 0, &cmd)) {
+		printf(SUB_2 "Failed to send xwr command\n");
+		return false;
+	}
+
+	/* Wait for command to be received */
+	if (!wait_for_command(OSDP_CMD_XWRITE, 5)) {
+		printf(SUB_2 "XWR command not received by PD\n");
+		return false;
+	}
+
+	return true;
+}
+
+static bool test_xwr_command_get_mode()
+{
+	printf(SUB_2 "testing extended write command 2 (get mode)\n");
+	reset_test_state();
+
+	struct osdp_cmd cmd = {
+		.id = OSDP_CMD_XWRITE,
+		.xwrite = {
+			.mode = 0,
+			.command = 0x01
+		},
+	};
+
+	if (osdp_cp_submit_command(g_test_ctx.cp_ctx, 0, &cmd)) {
+		printf(SUB_2 "Failed to send XWR command\n");
+		return false;
+	}
+
+	/* Wait for XRD mode reply event */
+	if (!wait_for_event(OSDP_EVENT_XREAD, 5)) {
+		printf(SUB_2 "XRD reply not received by CP\n");
+		return false;
+	}
+
+	/* Verify event data */
+	if (g_test_ctx.last_event_data) {
+		struct osdp_event *ev = (struct osdp_event *)g_test_ctx.last_event_data;
+		if ( (ev->xread.mode != 0)
+		  || (ev->xread.reply != 0x01)
+		  || (ev->xread.mode_report.mode_code != 1) ) {
+			printf(SUB_2 "XRD event data mismatch\n");
+			return false;
+		}
+	}
+
+	return true;
+}
+
 void run_command_tests(struct test *t)
 {
 	bool overall_result = true;
@@ -499,6 +568,8 @@ void run_command_tests(struct test *t)
 	overall_result &= test_keyset_command();
 	overall_result &= test_mfg_command_simple();
 	overall_result &= test_mfg_command_with_reply();
+	overall_result &= test_xwr_command_set_mode();
+	overall_result &= test_xwr_command_get_mode();
 
 	/* Teardown test environment */
 	teardown_test_environment();

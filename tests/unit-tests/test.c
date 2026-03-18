@@ -297,6 +297,7 @@ int test_setup_devices(struct test *t, osdp_t **cp, osdp_t **pd)
 		{ OSDP_PD_CAP_OUTPUT_CONTROL, 1, 4 },
 		{ OSDP_PD_CAP_READER_TEXT_OUTPUT, 1, 1 },
 		{ OSDP_PD_CAP_CONTACT_STATUS_MONITORING, 1, 8 },
+		{ OSDP_PD_CAP_SMART_CARD_SUPPORT, 1, 0 },
 		{ -1, -1, -1 }
 	};
 
