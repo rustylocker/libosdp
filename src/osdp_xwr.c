@@ -99,6 +99,81 @@ int pd_stage_event_xwr_reply(struct osdp_pd *pd, struct osdp_cmd *cmd, int cb_re
 	return ret;
 }
 
+int osdp_xwr_cmd_build(struct osdp_pd *pd, const struct osdp_cmd *cmd,
+		uint8_t *buf, int max_len)
+{
+	int len = 0;
+
+	// Write the common "header"
+	if (max_len < (CMD_XWR_HEADER_LEN+1)) {
+		LOG_ERR("Cmd length error");
+		return -1;
+	}
+	bwrite_u8(CMD_XWR, buf, &len);
+	bwrite_u8(cmd->xwrite.mode, buf, &len);
+	bwrite_u8(cmd->xwrite.command, buf, &len);
+
+	switch (cmd->xwrite.mode) {
+	// Support the read back and the setting of the PD’s behaviour mode.
+	case 0:
+		// Mode 0 commands are available in all modes.
+		switch (cmd->xwrite.command) {
+		case 0x02:
+			// En-/Disable the specified mode
+			if ((max_len-len) < CMD_XWR_MODE_SET_MIN_LEN) {
+				LOG_ERR("Cmd length error");
+				return -1;
+			}
+			bwrite_u8(cmd->xwrite.mode_set.mode_code, buf, &len);
+			bwrite_u8(cmd->xwrite.mode_set.mode_config, buf, &len);
+			break;
+		case 0x01:
+		default:
+			break;
+		}
+		break;
+	// Support transparent operations between the ACU and a Smart Card.
+	case 1:
+		switch (cmd->xwrite.command) {
+		case 1:
+			// Transparent content send
+			if ((max_len-len) < (cmd->xwrite.transp_send.apdu_length+CMD_XWR_TRANS_SEND_MIN_LEN)) {
+				LOG_ERR("Cmd length error");
+				return -1;
+			}
+			bwrite_u8(0, buf, &len);  // reader
+			memcpy(buf + len, cmd->xwrite.transp_send.apdu, cmd->xwrite.transp_send.apdu_length);
+			len += cmd->xwrite.transp_send.apdu_length;
+			break;
+		case 2:
+			// Disconnect from smart card
+			if ((max_len-len) < CMD_XWR_SC_DISCONNECT_LEN) {
+				LOG_ERR("Cmd length error");
+				return -1;
+			}
+			bwrite_u8(0, buf, &len);  // reader
+			break;
+		case 4:
+			// Trigger smart card scan
+			if ((max_len-len) < CMD_XWR_SC_SCAN_LEN) {
+				LOG_ERR("Cmd length error");
+				return -1;
+			}
+			bwrite_u8(0, buf, &len);  // reader
+			break;
+		default:
+			break;
+		}
+		break;
+
+	default:
+		LOG_ERR("Invalid XWR mode");
+		break;
+	}
+
+	return len;
+}
+
 int osdp_xwr_cmd_decode(struct osdp_pd *pd, struct osdp_cmd *cmd,
 		const uint8_t *buf, int len, bool *trigger_app)
 {
@@ -329,5 +404,112 @@ int osdp_xrd_reply_build(struct osdp_pd *pd, uint8_t *buf, int max_len)
 	}
 
 	return len;
+}
+
+int osdp_xrd_reply_decode(struct osdp_pd *pd, struct osdp_event *event,
+		const uint8_t *buf, int len)
+{
+	int pos = 0;
+
+	// Parse the common "header"
+	if (len < EVENT_XRD_HEADER_LEN) {
+		LOG_ERR("Event length error");
+		return -2;
+	}
+	event->type = OSDP_EVENT_XREAD;
+	event->xread.mode = buf[pos++];
+	event->xread.reply = buf[pos++];
+
+	// Parse the mode specific data
+	switch (event->xread.mode) {
+	// Support the read back and the setting of the PD’s behaviour mode.
+	case 0:
+		switch (event->xread.reply) {
+		case 0x00:
+			// General error indication
+			if ((len-pos) < EVENT_XRD_ERROR_LEN) {
+				LOG_ERR("Event length error");
+				return -2;
+			}
+			event->xread.error_reply.error_code = buf[pos++];
+			break;
+		case 0x01:
+			// Return the current extended write mode in effect.
+			if ((len-pos) < EVENT_XRD_MODE_REPORT_LEN) {
+				LOG_ERR("Event length error");
+				return -2;
+			}
+			event->xread.mode_report.mode_code = buf[pos++];
+			event->xread.mode_report.mode_config =
+					((len-pos) > 0) ? buf[pos++] : 0x0;
+			break;
+		case 0x02: {
+			// Card information report on smart card detection
+			if ((len-pos) < EVENT_XRD_CARD_REPORT_MIN_LEN) {
+				LOG_ERR("Event length error");
+				return -2;
+			}
+			event->xread.card_report.reader = buf[pos++];
+			event->xread.card_report.protocol = buf[pos++];
+			event->xread.card_report.csn_length = buf[pos++];
+			if ((len-pos) < event->xread.card_report.csn_length) {
+				LOG_ERR("Event length error");
+				return -2;
+			}
+			memcpy(event->xread.card_report.csn, buf + pos,
+					event->xread.card_report.csn_length);
+			pos += event->xread.card_report.csn_length;
+			event->xread.card_report.length = MAX(len - pos, 0);
+			memcpy(event->xread.card_report.data, buf + pos, event->xread.card_report.length);
+			pos += event->xread.card_report.length;
+		}	break;
+		default:
+			return -1;
+		}
+		break;
+
+	// Support transparent operations between the ACU and a Smart Card.
+	case 1:
+		switch (event->xread.reply) {
+		case 0x00:
+			// General error indication
+			if ((len-pos) < EVENT_XRD_ERROR_LEN) {
+				LOG_ERR("Event length error");
+				return -2;
+		}
+			event->xread.error_reply.error_code = buf[pos++];
+			break;
+		case 0x01:
+			// Card present notification.
+			if ((len-pos) < EVENT_XRD_SC_PRESENT_LEN) {
+				LOG_ERR("Event length error");
+				return -2;
+			}
+			event->xread.card_present.reader = buf[pos++];
+			event->xread.card_present.status = buf[pos++];
+			break;
+		case 0x02: {
+			// Transparent card data.
+			if ((len-pos) < EVENT_XRD_CARD_DATA_MIN_LEN) {
+				LOG_ERR("Event length error");
+				return -2;
+			}
+			event->xread.card_data.reader = buf[pos++];
+			event->xread.card_data.status = buf[pos++];
+			event->xread.card_data.apdu_length = MAX(len - pos, 0);
+			memcpy(event->xread.card_data.apdu, buf + pos, event->xread.card_data.apdu_length);
+			pos += event->xread.card_data.apdu_length;
+		}	break;
+		default:
+		return -1;
+		}
+		break;
+
+	default:
+		LOG_ERR("Invalid XWR mode");
+		break;
+	}
+
+	return 0;
 }
 

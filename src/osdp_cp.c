@@ -11,6 +11,7 @@
 #include "osdp_common.h"
 #include "osdp_file.h"
 #include "osdp_diag.h"
+#include "osdp_xwr.h"
 
 #define CMD_POLL_LEN                   1
 #define CMD_LSTAT_LEN                  1
@@ -317,6 +318,14 @@ static int cp_build_command(struct osdp_pd *pd, uint8_t *buf, int max_len)
 		bwrite_u24_le(cmd->mfg.vendor_code, buf, &len);
 		memcpy(buf + len, cmd->mfg.data, cmd->mfg.length);
 		len += cmd->mfg.length;
+		break;
+	case CMD_XWR:
+		cmd = (struct osdp_cmd *)pd->ephemeral_data;
+		ret = osdp_xwr_cmd_build(pd, cmd, buf + len, max_len);
+		if (ret < 0) {
+			break;
+		}
+		len += ret;
 		break;
 	case CMD_ACURXSIZE:
 		buf[len++] = pd->cmd_id;
@@ -635,6 +644,14 @@ static int cp_decode_response(struct osdp_pd *pd, uint8_t *buf, int len)
 	case REPLY_FTSTAT:
 		ret = osdp_file_cmd_stat_decode(pd, buf + pos, len);
 		break;
+	case REPLY_XRD:
+		ret = osdp_xrd_reply_decode(pd, &event, buf + pos, len);
+		if (ret == 0) {
+			memcpy(pd->ephemeral_data, &event, sizeof(event));
+			make_request(pd, CP_REQ_EVENT_SEND);
+			ret = OSDP_CP_ERR_NONE;
+		}
+		break;
 	case REPLY_CCRYPT:
 		if (sc_is_active(pd) || pd->cmd_id != CMD_CHLNG) {
 			LOG_EM("Out of order REPLY_CCRYPT; has PD gone rogue?");
@@ -787,6 +804,7 @@ static int cp_translate_cmd(struct osdp_pd *pd, const struct osdp_cmd *cmd)
 	case OSDP_CMD_TEXT:   return CMD_TEXT;
 	case OSDP_CMD_COMSET: return CMD_COMSET;
 	case OSDP_CMD_MFG:    return CMD_MFG;
+	case OSDP_CMD_XWRITE: return CMD_XWR;
 	case OSDP_CMD_STATUS:
 		switch (cmd->status.type) {
 		case OSDP_STATUS_REPORT_INPUT:  return CMD_ISTAT;
@@ -1063,6 +1081,7 @@ static bool cp_check_online_response(struct osdp_pd *pd)
 		    pd->reply_id == REPLY_OSTATR ||
 		    pd->reply_id == REPLY_RSTATR ||
 		    pd->reply_id == REPLY_MFGREP ||
+		    pd->reply_id == REPLY_XRD ||
 		    pd->reply_id == REPLY_RAW ||
 		    pd->reply_id == REPLY_KEYPAD) {
 			return true;
@@ -1075,6 +1094,7 @@ static bool cp_check_online_response(struct osdp_pd *pd)
 	case CMD_FILETRANSFER: return pd->reply_id == REPLY_FTSTAT;
 	case CMD_COMSET:       return pd->reply_id == REPLY_COM;
 	case CMD_MFG:          return pd->reply_id == REPLY_MFGREP;
+	case CMD_XWR:          return pd->reply_id == REPLY_XRD;
 	case CMD_LSTAT:        return pd->reply_id == REPLY_LSTATR;
 	case CMD_ISTAT:        return pd->reply_id == REPLY_ISTATR;
 	case CMD_OSTAT:        return pd->reply_id == REPLY_OSTATR;
