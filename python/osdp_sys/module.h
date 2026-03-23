@@ -87,6 +87,7 @@ int pyosdp_dict_add_int(PyObject *dict, const char *key, int val);
 int pyosdp_dict_add_str(PyObject *dict, const char *key, const char *val);
 int pyosdp_dict_add_bytes(PyObject *dict, const char *key, const uint8_t *data,
 			  int len);
+int pyosdp_dict_add_dict(PyObject *dict, const char *key, PyObject *obj);
 void pyosdp_get_channel(PyObject *channel, struct osdp_channel *ops);
 
 void pyosdp_add_error_context(PyObject *exc_type, const char *format, ...);

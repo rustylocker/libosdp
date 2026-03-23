@@ -357,7 +357,7 @@ static PyObject *pyosdp_cp_disable_pd(pyosdp_cp_t *self, PyObject *args)
 	"@return boolean status of enable request\n"
 static PyObject *pyosdp_cp_enable_pd(pyosdp_cp_t *self, PyObject *args)
 {
-	int ret, pd;
+	int pd;
 
 	if (!PyArg_ParseTuple(args, "I", &pd)) {
 		PyErr_SetString(PyExc_ValueError, "Invalid arguments");
@@ -403,7 +403,7 @@ static PyObject *pyosdp_cp_is_pd_enabled(pyosdp_cp_t *self, PyObject *args)
 
 static PyObject *pyosdp_cp_modify_flag(pyosdp_cp_t *self, PyObject *args, bool do_set)
 {
-	int ret, pd, flags;
+	int pd, flags;
 
 	if (!PyArg_ParseTuple(args, "II", &pd, &flags))
 		Py_RETURN_FALSE;

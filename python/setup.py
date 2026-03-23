@@ -11,7 +11,7 @@ import shutil
 import subprocess
 
 project_name = "libosdp"
-project_version = "3.2.1"
+project_version = "3.3.0"
 current_dir = os.path.dirname(os.path.realpath(__file__))
 repo_root = os.path.realpath(os.path.join(current_dir, ".."))
 
@@ -132,6 +132,7 @@ lib_sources = [
     "src/osdp_file.c",
     "src/osdp_pd.c",
     "src/osdp_cp.c",
+    "src/osdp_xwr.c",
     "src/crypto/tinyaes_src.c",
     "src/crypto/tinyaes.c",
 ]
@@ -141,6 +142,7 @@ lib_includes = [
     "include/osdp_export.h",
     "src/osdp_common.h",
     "src/osdp_file.h",
+    "src/osdp_xwr.h",
     "src/crypto/tinyaes_src.h",
 ]
 

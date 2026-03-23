@@ -367,6 +367,94 @@ static int pyosdp_make_struct_cmd_status(struct osdp_cmd *p, PyObject *dict)
 	return 0;
 }
 
+static int pyosdp_make_dict_cmd_xwrite(PyObject *obj, struct osdp_cmd *cmd)
+{
+	if (pyosdp_dict_add_int(obj, "mode", cmd->xwrite.mode))
+		return -1;
+	if (pyosdp_dict_add_int(obj, "xwr_command", cmd->xwrite.command))
+		return -1;
+	return 0;
+}
+
+static int pyosdp_make_struct_cmd_xwrite(struct osdp_cmd *p, PyObject *dict)
+{
+	PyObject *data_dict;
+	int mode, command, reader;
+	struct osdp_cmd_xwrite *cmd = &p->xwrite;
+
+	if (pyosdp_dict_get_int(dict, "mode", &mode))
+		return -1;
+	if (pyosdp_dict_get_int(dict, "xwr_command", &command))
+		return -1;
+
+	cmd->mode = mode;
+	cmd->command = command;
+
+	switch (mode) {
+	case 0:
+		switch (command) {
+		case 2: {
+			int mode_code, mode_config;
+			if (pyosdp_dict_get_object(dict, "mode_set", &data_dict))
+				return -1;
+			if (!PyDict_Check(data_dict)) {
+				PyErr_SetString(PyExc_TypeError, "\"mode_set\" is not a dict");
+				return -1;
+			}
+			if (pyosdp_dict_get_int(data_dict, "mode_code", &mode_code))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "mode_config", &mode_config))
+				return -1;
+			cmd->mode_set.mode_code = mode_code;
+			cmd->mode_set.mode_config = mode_config;
+		}	break;
+		default:
+			break;
+		}
+		break;
+	case 1:
+		switch (command) {
+		case 1: {
+			uint8_t *apdu_bytes;
+			int i, apdu_length;
+			if (pyosdp_dict_get_object(dict, "transp_send", &data_dict))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "reader", &reader))
+				return -1;
+			if (pyosdp_dict_get_bytes(data_dict, "apdu", &apdu_bytes, &apdu_length))
+				return -1;
+			cmd->transp_send.reader = reader;
+			cmd->transp_send.apdu_length = apdu_length;
+			for (i = 0; i < apdu_length; i++)
+				cmd->transp_send.apdu[i] = apdu_bytes[i];
+		}	break;
+		case 2:
+			if (pyosdp_dict_get_object(dict, "sc_disco", &data_dict))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "reader", &reader))
+				return -1;
+			cmd->sc_disco.reader = reader;
+			break;
+		case 3:
+			if (pyosdp_dict_get_object(dict, "secure_pin", &data_dict))
+				return -1;
+			break;
+		case 4:
+			if (pyosdp_dict_get_object(dict, "sc_scan", &data_dict))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "reader", &reader))
+				return -1;
+			cmd->sc_scan.reader = reader;
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 /* ------------------------------- */
 /*             EVENTS              */
 /* ------------------------------- */
@@ -479,7 +567,7 @@ static int pyosdp_make_dict_event_mfg_reply(PyObject *obj, struct osdp_event *ev
 static int pyosdp_make_struct_event_mfg_reply(struct osdp_event *p,
 					      PyObject *dict)
 {
-	int i, data_length, vendor_code, command;
+	int i, data_length, vendor_code;
 	struct osdp_event_mfgrep *ev = &p->mfgrep;
 	uint8_t *data_bytes;
 
@@ -557,6 +645,178 @@ static int pyosdp_make_struct_event_notif(struct osdp_event *p, PyObject *dict)
 	return 0;
 }
 
+static int pyosdp_make_dict_event_xread(PyObject *obj, struct osdp_event *event)
+{
+	if (pyosdp_dict_add_int(obj, "mode", event->xread.mode))
+		return -1;
+	if (pyosdp_dict_add_int(obj, "reply", event->xread.reply))
+		return -1;
+
+	if (event->xread.reply == 0) {
+		if (pyosdp_dict_add_int(obj, "error_code", event->xread.error_reply.error_code))
+			return -1;
+	}
+	else {
+		switch (event->xread.mode) {
+		case 0:
+			switch (event->xread.reply) {
+			case 0:
+				if (pyosdp_dict_add_int(obj, "error_code", event->xread.error_reply.error_code))
+					return -1;
+				break;
+			case 1: {
+				PyObject *data_dict = PyDict_New();
+				if (pyosdp_dict_add_dict(obj, "mode_report", data_dict))
+					return -1;
+				if (pyosdp_dict_add_int(data_dict, "mode_code", event->xread.mode_report.mode_code))
+					return -1;
+				if (pyosdp_dict_add_int(data_dict, "mode_config", event->xread.mode_report.mode_config))
+					return -1;
+			}	break;
+			default:
+				break;
+			}
+			break;
+		case 1:
+			switch (event->xread.reply) {
+			case 0:
+				if (pyosdp_dict_add_int(obj, "error_code", event->xread.error_reply.error_code))
+					return -1;
+				break;
+			case 1: {
+				PyObject *data_dict = PyDict_New();
+				if (pyosdp_dict_add_dict(obj, "card_present", data_dict))
+					return -1;
+				if (pyosdp_dict_add_int(data_dict, "reader", event->xread.card_present.reader))
+					return -1;
+				if (pyosdp_dict_add_int(data_dict, "status", event->xread.card_present.status))
+					return -1;
+			}	break;
+			case 2: {
+				PyObject *data_dict = PyDict_New();
+				if (pyosdp_dict_add_dict(obj, "card_data", data_dict))
+					return -1;
+				if (pyosdp_dict_add_int(data_dict, "reader", event->xread.card_data.reader))
+					return -1;
+				if (pyosdp_dict_add_int(data_dict, "status", event->xread.card_data.status))
+					return -1;
+				if (pyosdp_dict_add_bytes(data_dict, "data", event->xread.card_data.apdu,
+						event->xread.card_data.apdu_length))
+					return -1;
+			}	break;
+			default:
+				break;
+			}
+			break;
+		default:
+			break;
+		}
+	}
+
+	return 0;
+}
+
+static int pyosdp_make_struct_event_xread(struct osdp_event *p, PyObject *dict)
+{
+	PyObject *data_dict;
+	int mode, reply;
+	struct osdp_event_xread *ev = &p->xread;
+
+	if (pyosdp_dict_get_int(dict, "mode", &mode))
+		return -1;
+	if (pyosdp_dict_get_int(dict, "reply", &reply))
+		return -1;
+	ev->mode = mode;
+	ev->reply = reply;
+
+	switch (mode) {
+	case 0:
+		switch (reply) {
+		case 0: {
+			int error_code;
+			if (pyosdp_dict_get_object(dict, "error_reply", &data_dict))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "error_code", &error_code))
+				return -1;
+			ev->error_reply.error_code = error_code;
+		}	break;
+		case 1: {
+			int mode_code, mode_config;
+			if (pyosdp_dict_get_object(dict, "mode_report", &data_dict))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "mode_code", &mode_code))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "mode_config", &mode_config))
+				return -1;
+			ev->mode_report.mode_code = mode_code;
+			ev->mode_report.mode_config = mode_config;
+		}	break;
+		case 2: {
+			int i, reader, protocol, csn_length, data_length;
+			uint8_t *csn_bytes, *data_bytes;
+			if (pyosdp_dict_get_object(dict, "card_report", &data_dict))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "reader", &reader))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "protocol", &protocol))
+				return -1;
+			if (pyosdp_dict_get_bytes(data_dict, "csn", &csn_bytes, &csn_length))
+				return -1;
+			if (pyosdp_dict_get_bytes(data_dict, "data", &data_bytes, &data_length))
+				return -1;
+			ev->card_report.reader = reader;
+			ev->card_report.protocol = protocol;
+			ev->card_report.csn_length = csn_length;
+			for (i = 0; i < csn_length; i++)
+				ev->card_report.csn[i] = csn_bytes[i];
+			ev->card_report.length = data_length;
+			for (i = 0; i < data_length; i++)
+				ev->card_report.data[i] = data_bytes[i];
+		}	break;
+		default:
+			break;
+		}
+		break;
+	case 1:
+		switch (reply) {
+		case 1: {
+			int reader, status;
+			if (pyosdp_dict_get_object(dict, "card_present", &data_dict))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "reader", &reader))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "status", &status))
+				return -1;
+			ev->card_present.reader = reader;
+			ev->card_present.status = status;
+		}	break;
+		case 2: {
+			int i, reader, status, apdu_length;
+			uint8_t *apdu_bytes;
+			if (pyosdp_dict_get_object(dict, "card_data", &data_dict))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "reader", &reader))
+				return -1;
+			if (pyosdp_dict_get_int(data_dict, "status", &status))
+				return -1;
+			if (pyosdp_dict_get_bytes(data_dict, "apdu", &apdu_bytes, &apdu_length))
+				return -1;
+			ev->card_data.reader = reader;
+			ev->card_data.status = status;
+			ev->card_data.apdu_length = apdu_length;
+			for (i = 0; i < apdu_length; i++)
+				ev->card_data.apdu[i] = apdu_bytes[i];
+		}	break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
 static struct {
 	int (*dict_to_struct)(struct osdp_cmd *, PyObject *);
 	int (*struct_to_dict)(PyObject *, struct osdp_cmd *);
@@ -601,6 +861,10 @@ static struct {
 		.dict_to_struct = pyosdp_make_struct_cmd_status,
 		.struct_to_dict = pyosdp_make_dict_cmd_status,
 	},
+	[OSDP_CMD_XWRITE] = {
+		.dict_to_struct = pyosdp_make_struct_cmd_xwrite,
+		.struct_to_dict = pyosdp_make_dict_cmd_xwrite,
+	},
 };
 
 static struct {
@@ -626,6 +890,10 @@ static struct {
 	[OSDP_EVENT_NOTIFICATION] = {
 		.struct_to_dict = pyosdp_make_dict_event_notif,
 		.dict_to_struct = pyosdp_make_struct_event_notif,
+	},
+	[OSDP_EVENT_XREAD] = {
+		.struct_to_dict = pyosdp_make_dict_event_xread,
+		.dict_to_struct = pyosdp_make_struct_event_xread,
 	},
 };
 

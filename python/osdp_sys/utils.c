@@ -60,6 +60,21 @@ int pyosdp_dict_add_bytes(PyObject *dict, const char *key, const uint8_t *data,
 	return ret;
 }
 
+int pyosdp_dict_add_dict(PyObject *outer, const char *key, PyObject *inner)
+{
+    /* outer and inner must be dict objects (or at least mapping and value). */
+    if (!PyDict_Check(outer) || !PyDict_Check(inner))
+        return -1;
+
+    /* PyDict_SetItemString increments reference to the value on success.
+       If inner is a new reference from elsewhere, pass it directly; otherwise
+       Py_INCREF(before) or manage accordingly. */
+    if (PyDict_SetItemString(outer, key, inner) < 0)
+        return -1;
+
+    return 0;
+}
+
 int pyosdp_module_add_type(PyObject *module, const char *name,
 			   PyTypeObject *type)
 {

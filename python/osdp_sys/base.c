@@ -146,7 +146,7 @@ static PyObject *pyosdp_get_file_tx_status(pyosdp_base_t *self, PyObject *args)
 	"@return boolean status of command submission\n"
 static PyObject *pyosdp_file_register_ops(pyosdp_base_t *self, PyObject *args)
 {
-	int rc, pd_idx;
+	int pd_idx;
 	PyObject *fops_dict;
 	osdp_t *ctx;
 	pyosdp_cp_t *cp = (pyosdp_cp_t *)self;
